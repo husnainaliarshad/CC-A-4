@@ -53,6 +53,8 @@ char* value_to_string(ASTNode* node) {
 int process_object(ASTNode* object, char* parent_table, int parent_id, char* array_key, int seq);
 
 void process_array(ASTNode* array, char* parent_table, int parent_id, char* array_key) {
+    if (!array) return; // Safety check
+
     char* table_name = malloc(strlen(array_key) + 5);
     sprintf(table_name, "%s.csv", array_key);
     int table_index = num_tables++;
@@ -60,30 +62,36 @@ void process_array(ASTNode* array, char* parent_table, int parent_id, char* arra
     tables[table_index]->name = table_name;
     tables[table_index]->next_id = 1;
 
-    if (array->data.array.count == 0 || is_scalar(array->data.array.elements[0])) {
+    // Handle empty array or scalar array
+    if (array->data.array.count == 0 || (array->data.array.elements && array->data.array.elements[0] && is_scalar(array->data.array.elements[0]))) {
         tables[table_index]->columns = malloc(3 * sizeof(char*));
-        tables[table_index]->columns[0] = strdup(parent_table ? (strrchr(parent_table, '/') ? strrchr(parent_table, '/') + 1 : parent_table) : "main_id");
+        tables[table_index]->columns[0] = strdup(parent_table ? parent_table : "main_id");
         tables[table_index]->columns[1] = strdup("index");
         tables[table_index]->columns[2] = strdup("value");
         tables[table_index]->num_columns = 3;
     } else {
-        ASTNode* first = array->data.array.elements[0];
-        int col_count = 2;
-        for (int i = 0; i < first->data.object.count; i++) {
-            if (is_scalar(first->data.object.values[i])) col_count++;
-            else if (first->data.object.values[i]->type == OBJ) col_count++;
+        // Handle array of objects
+        ASTNode* first = (array->data.array.count > 0 && array->data.array.elements) ? array->data.array.elements[0] : NULL;
+        int col_count = 2; // main_id/parent_id and seq
+        if (first && first->type == OBJ) {
+            for (int i = 0; i < first->data.object.count; i++) {
+                if (is_scalar(first->data.object.values[i])) col_count++;
+                else if (first->data.object.values[i] && first->data.object.values[i]->type == OBJ) col_count++;
+            }
         }
         tables[table_index]->columns = malloc(col_count * sizeof(char*));
-        tables[table_index]->columns[0] = strdup(parent_table ? (strrchr(parent_table, '/') ? strrchr(parent_table, '/') + 1 : parent_table) : "main_id");
+        tables[table_index]->columns[0] = strdup(parent_table ? parent_table : "main_id");
         tables[table_index]->columns[1] = strdup("seq");
         int col_idx = 2;
-        for (int i = 0; i < first->data.object.count; i++) {
-            if (is_scalar(first->data.object.values[i])) {
-                tables[table_index]->columns[col_idx++] = strdup(first->data.object.keys[i]);
-            } else if (first->data.object.values[i]->type == OBJ) {
-                char* fk = malloc(strlen(first->data.object.keys[i]) + 4);
-                sprintf(fk, "%s_id", first->data.object.keys[i]);
-                tables[table_index]->columns[col_idx++] = fk;
+        if (first && first->type == OBJ) {
+            for (int i = 0; i < first->data.object.count; i++) {
+                if (is_scalar(first->data.object.values[i])) {
+                    tables[table_index]->columns[col_idx++] = strdup(first->data.object.keys[i]);
+                } else if (first->data.object.values[i] && first->data.object.values[i]->type == OBJ) {
+                    char* fk = malloc(strlen(first->data.object.keys[i]) + 4);
+                    sprintf(fk, "%s_id", first->data.object.keys[i]);
+                    tables[table_index]->columns[col_idx++] = fk;
+                }
             }
         }
         tables[table_index]->num_columns = col_idx;
@@ -105,17 +113,20 @@ void process_array(ASTNode* array, char* parent_table, int parent_id, char* arra
     fprintf(tables[table_index]->fp, "\n");
 
     for (int i = 0; i < array->data.array.count; i++) {
+        if (!array->data.array.elements[i]) continue; // Skip null elements
         if (is_scalar(array->data.array.elements[i])) {
             char* val = value_to_string(array->data.array.elements[i]);
             fprintf(tables[table_index]->fp, "%d,%d,\"%s\"\n", parent_id, i, val);
             free(val);
-        } else {
+        } else if (array->data.array.elements[i]->type == OBJ) {
             process_object(array->data.array.elements[i], table_name, parent_id, array_key, i);
         }
     }
 }
 
 int process_object(ASTNode* object, char* parent_table, int parent_id, char* array_key, int seq) {
+    if (!object || object->type != OBJ) return 0; // Safety check
+
     char** keys = object->data.object.keys;
     int num_keys = object->data.object.count;
     qsort(keys, num_keys, sizeof(char*), compare_strings);
@@ -138,7 +149,7 @@ int process_object(ASTNode* object, char* parent_table, int parent_id, char* arr
         int col_count = 1; // id
         for (int i = 0; i < num_keys; i++) {
             if (is_scalar(object->data.object.values[i])) col_count++;
-            else if (object->data.object.values[i]->type == OBJ) col_count++;
+            else if (object->data.object.values[i] && object->data.object.values[i]->type == OBJ) col_count++;
         }
         tables[table_index]->columns = malloc(col_count * sizeof(char*));
         tables[table_index]->columns[0] = strdup("id");
@@ -146,7 +157,7 @@ int process_object(ASTNode* object, char* parent_table, int parent_id, char* arr
         for (int i = 0; i < num_keys; i++) {
             if (is_scalar(object->data.object.values[i])) {
                 tables[table_index]->columns[col_idx++] = strdup(keys[i]);
-            } else if (object->data.object.values[i]->type == OBJ) {
+            } else if (object->data.object.values[i] && object->data.object.values[i]->type == OBJ) {
                 char* fk = malloc(strlen(keys[i]) + 4);
                 sprintf(fk, "%s_id", keys[i]);
                 tables[table_index]->columns[col_idx++] = fk;
@@ -184,6 +195,7 @@ int process_object(ASTNode* object, char* parent_table, int parent_id, char* arr
 
     for (int i = 0; i < num_keys; i++) {
         ASTNode* value = object->data.object.values[i];
+        if (!value) continue; // Skip null values
         if (is_scalar(value)) {
             char* str = value_to_string(value);
             fprintf(fp, ",\"%s\"", str);
@@ -208,6 +220,7 @@ int process_object(ASTNode* object, char* parent_table, int parent_id, char* arr
         fprintf(parent_fp, "%d,%d", parent_id, seq);
         for (int i = 0; i < num_keys; i++) {
             ASTNode* value = object->data.object.values[i];
+            if (!value) continue;
             if (is_scalar(value)) {
                 char* str = value_to_string(value);
                 fprintf(parent_fp, ",\"%s\"", str);
@@ -226,6 +239,7 @@ int process_object(ASTNode* object, char* parent_table, int parent_id, char* arr
 }
 
 void generate_csv(ASTNode* root, char* out_dir) {
+    if (!root) return;
     output_dir = out_dir;
     if (root->type == OBJ) {
         process_object(root, NULL, 0, NULL, 0);
@@ -236,7 +250,7 @@ void generate_csv(ASTNode* root, char* out_dir) {
 
 void cleanup_tables() {
     for (int i = 0; i < num_tables; i++) {
-        fclose(tables[i]->fp);
+        if (tables[i]->fp) fclose(tables[i]->fp);
         for (int j = 0; j < tables[i]->num_columns; j++) {
             free(tables[i]->columns[j]);
         }

@@ -9,7 +9,7 @@ extern int yylex();
 void yyerror(const char* s);
 ASTNode* root;
 int print_ast_flag = 0;
-char* output_dir = ".";
+char* output_directory = ".";
 %}
 
 %union {
@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
         if (strcmp(argv[i], "--print-ast") == 0) {
             print_ast_flag = 1;
         } else if (strcmp(argv[i], "--out-dir") == 0 && i + 1 < argc) {
-            output_dir = argv[++i];
+            output_directory = argv[++i];
         } else if (!input_file) {
             input_file = argv[i];
         } else {
@@ -91,7 +91,7 @@ int main(int argc, char* argv[]) {
         print_ast_node(root, 0);
     }
 
-    generate_csv(root, output_dir);
+    generate_csv(root, output_directory);
 
     free_ast(root);
     cleanup_tables();
