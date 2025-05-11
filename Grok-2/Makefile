@@ -17,3 +17,6 @@ parser.tab.c parser.tab.h: parser.y
 
 clean:
 	rm -f json2relcsv lex.yy.c parser.tab.c parser.tab.h *.csv
+
+cleancsv: 
+	rm *.csv

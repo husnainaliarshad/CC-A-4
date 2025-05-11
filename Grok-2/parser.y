@@ -27,8 +27,8 @@ json: value { root = $1; }
 
 value: object { $$ = $1; }
      | array { $$ = $1; }
-     | STRING { $$ = make_string($1); }
-     | NUMBER { $$ = make_number($1); }
+     | STRING { $$ = make_string($1); free($1); }
+     | NUMBER { $$ = make_number($1); free($1); }
      | TRUE { $$ = make_true(); }
      | FALSE { $$ = make_false(); }
      | NULL_VAL { $$ = make_null(); }
@@ -42,14 +42,14 @@ members: pair { $$ = $1; }
        | members ',' pair { $$ = make_pair_list($3, $1); }
 ;
 
-pair: STRING ':' value { $$ = make_pair($1, $3); }
+pair: STRING ':' value { $$ = make_pair($1, $3); free($1); }
 ;
 
 array: '[' ']' { $$ = make_array(NULL); }
      | '[' elements ']' { $$ = make_array($2); }
 ;
 
-elements: value { $$ = $1; }
+elements: value { $$ = make_element_list($1, NULL); }
         | elements ',' value { $$ = make_element_list($3, $1); }
 ;
 
